@@ -1,2 +1,3 @@
-*.o
+.o
 test_ringbuf
+sensor_framework
