@@ -4,7 +4,7 @@ CFLAGS = -Wall -O2 -std=gnu99 -Iinclude
 LDFLAGS = -lpthread -lm
 TARGET = sensor_framework
 VPATH = src
-OBJS = main.o ringbuf.o
+OBJS = main.o ringbuf.o thread_sensor.o thread_gps.o serial.o gps_nmea.o collector.o thread_process.o thread_store.o
 
 $(TARGET): $(OBJS)
 	$(CC) -o $(TARGET) $(OBJS) $(LDFLAGS)

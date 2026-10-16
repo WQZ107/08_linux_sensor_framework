@@ -48,6 +48,7 @@ extern pthread_mutex_t g_gps_lock;
 extern AccelData g_accel;
 extern pthread_mutex_t g_accel_lock;
 extern DataRingBuffer g_databuf;
+extern DataRingBuffer g_procbuf;
 extern volatile int g_running;   /* ⭐退出开关 */
 
 /* ─── 工具函数（main.c 实现）─── */

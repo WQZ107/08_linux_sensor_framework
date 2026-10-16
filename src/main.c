@@ -7,7 +7,8 @@
 pthread_mutex_t g_gps_lock = PTHREAD_MUTEX_INITIALIZER;
 AccelData g_accel = {0};
 pthread_mutex_t g_accel_lock = PTHREAD_MUTEX_INITIALIZER;
-DataRingBuffer g_databuf;
+DataRingBuffer g_databuf;        /* 1号buffer：采集 → 处理 */
+DataRingBuffer g_procbuf;        /* 2号buffer：处理 → 存储    ★B方案新增 */
 volatile int g_running = 1;      /* ⭐所有线程的退出开关 */
 
 /* Ctrl+C 信号处理：只置标志，绝不做别的（第2步唯一新知识点） */
@@ -33,29 +34,14 @@ extern void *collector_thread(void *);
 extern void *process_thread(void *);
 extern void *store_thread(void *);
 
-/* ─── 骨架阶段的临时空线程（第3步逐个换成真活）─── */
-static void *dummy(int id)
-{
-    while (g_running) {
-        printf("[线程%d] 活着\n", id);
-        sleep(1);
-    }
-    printf("[线程%d] 退出\n", id);
-    return NULL;
-}
-void *gps_thread(void *a)      { (void)a; return dummy(1); }
-void *sensor_thread(void *a)   { (void)a; return dummy(2); }
-void *collector_thread(void *a){ (void)a; return dummy(3); }
-void *process_thread(void *a)  { (void)a; return dummy(4); }
-void *store_thread(void *a)    { (void)a; return dummy(5); }
-
 int main(void)
 {
     pthread_t tid[5];
 
     signal(SIGINT, sigint_handler);          /* 1. 注册 Ctrl+C 处理 */
 
-    if (rb_init(&g_databuf, 100) != 0) {     /* 2. 初始化环形buffer（容量100→可存99条） */
+    /* 2. 初始化两个环形buffer（各容量100→可存99条）★B方案：两个一起初始化 */
+    if (rb_init(&g_databuf, 100) != 0 || rb_init(&g_procbuf, 100) != 0) {
         fprintf(stderr, "buffer初始化失败\n");
         return -1;
     }
@@ -76,6 +62,7 @@ int main(void)
 
     /* 5. 清理（谁 init 谁 destroy，和 create/free 一个道理） */
     rb_destroy(&g_databuf);
+    rb_destroy(&g_procbuf);              /* ★B方案 */
     printf("程序已退出\n");
     return 0;
 }
