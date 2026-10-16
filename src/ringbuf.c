@@ -1,4 +1,4 @@
-/* src/ringbuf.c —— Day4 骨架 + 锁 + 条件变量 */
+/* src/ringbuf.c —— Day4 骨架 + 锁 + 条件变量 +（第4步）带超时的 pop */
 #include "common.h"
 #include "ringbuf.h"
 
@@ -43,4 +43,29 @@ void rb_destroy(DataRingBuffer *rb)
     pthread_mutex_destroy(&rb->lock);
     pthread_cond_destroy(&rb->not_empty);
     pthread_cond_destroy(&rb->not_full);
+}
+
+/* ★第4步：带超时的 pop —— 最多睡 timeout_sec 就自己醒，回来检查 g_running
+   返回 0=取到数据；-1=超时没数据 */
+int rb_pop_timeout(DataRingBuffer *rb, DataPoint *data, int timeout_sec)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += timeout_sec;                       /* 绝对截止时间 = 现在 + timeout */
+
+    pthread_mutex_lock(&rb->lock);
+    while (rb->head == rb->tail && g_running)       /* ⭐还是 while（虚假唤醒铁律不变） */
+    {
+        if (pthread_cond_timedwait(&rb->not_empty, &rb->lock, &ts) != 0)
+            break;                                  /* 超时返回非0 → 跳出去 */
+    }
+    if (rb->head == rb->tail) {                     /* 超时了还没数据 */
+        pthread_mutex_unlock(&rb->lock);
+        return -1;
+    }
+    *data = rb->buffer[rb->head];
+    rb->head = (rb->head + 1) % rb->size;
+    pthread_mutex_unlock(&rb->lock);
+    pthread_cond_signal(&rb->not_full);
+    return 0;
 }

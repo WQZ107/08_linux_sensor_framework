@@ -59,7 +59,8 @@ void *store_thread(void *arg)
     while (g_running)
     {
         DataPoint dp;
-        rb_pop(&g_procbuf, &dp);                    /* B方案：从2号buffer取（处理线程转交来的）*/
+        if (rb_pop_timeout(&g_procbuf, &dp, 1) != 0)  /* ★第4步：带超时等；超时回 while 看 g_running */
+            continue;
 
         int n = fprintf(fp, "%s,%.6f,%.6f,%.0f,%.2f,%.1f,%.1f,%.1f,%.1f,%.0f,%d,%d\n",
                         dp.timestamp, dp.lat, dp.lon, dp.speed,
