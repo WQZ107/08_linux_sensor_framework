@@ -1,3 +1,6 @@
 *.o
 test_ringbuf
-sensor_framework/
+sensor_framework
+i2c_scan
+i2c_scan2
+i2c_scan3
