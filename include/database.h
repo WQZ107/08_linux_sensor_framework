@@ -19,6 +19,7 @@ int  db_insert_alert(DBHandle *h, const char *ts,
                      const char *type, const char *detail);
 int  db_query_range(DBHandle *h, const char *start, const char *end);
 int  db_stats(DBHandle *h);
+int  db_export_csv(DBHandle *h, const char *start, const char *end, const char *csvfile);
 void db_close(DBHandle *h);
 
 #endif

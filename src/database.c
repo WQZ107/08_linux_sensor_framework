@@ -154,6 +154,58 @@ int db_stats(DBHandle *h)
     return 0;
 }
 
+/* 按时间段导出CSV(组4):prepare/step 遍历 + column 逐列取值
+   ★列号对应12列表 SELECT 的12列:0=timestamp 1=lat 2=lon 3=speed 4=accel
+    5=temp 6=humi 7=pitch 8=roll 9=dist 10=sat 11=alert */
+int db_export_csv(DBHandle *h, const char *start, const char *end,
+                  const char *csvfile)
+{
+    FILE *fp = fopen(csvfile, "w");
+    if (!fp) { perror("创建CSV失败"); return -1; }
+
+    /* 表头(12列,与组1表结构一致;带BOM防Excel中文乱码) */
+    fprintf(fp, "\xEF\xBB\xBF时间,纬度,经度,速度,加速度,温度,湿度,俯仰,横滚,距离,卫星,告警\n");
+
+    /* 外部输入的时间范围:严格应绑?;内部工具+固定格式,教材允许拼接(见组4边界) */
+    char sql[256];
+    snprintf(sql, sizeof(sql),
+             "SELECT timestamp, latitude, longitude, speed, accel_total,"
+             " temperature, humidity, pitch, roll, distance, satellites, alert"
+             " FROM data_point WHERE timestamp BETWEEN '%s' AND '%s'"
+             " ORDER BY timestamp;",
+             start, end);
+
+    sqlite3_stmt *stmt;
+    int rows = 0;
+    if (sqlite3_prepare_v2(h->db, sql, -1, &stmt, NULL) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {      /* 取到没有下一行为止 */
+            fprintf(fp, "%s,%.6f,%.6f,%.0f,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%d\r\n",
+                    sqlite3_column_text(stmt, 0),
+                    sqlite3_column_double(stmt, 1),
+                    sqlite3_column_double(stmt, 2),
+                    sqlite3_column_double(stmt, 3),
+                    sqlite3_column_double(stmt, 4),
+                    sqlite3_column_double(stmt, 5),
+                    sqlite3_column_double(stmt, 6),
+                    sqlite3_column_double(stmt, 7),
+                    sqlite3_column_double(stmt, 8),
+                    sqlite3_column_double(stmt, 9),
+                    sqlite3_column_int(stmt, 10),
+                    sqlite3_column_int(stmt, 11));
+            rows++;
+        }
+        sqlite3_finalize(stmt);                          /* 每个prepare配一个finalize */
+    } else {
+        fprintf(stderr, "[DB] 导出prepare失败: %s\r\n", sqlite3_errmsg(h->db));
+        fclose(fp);
+        return -1;
+    }
+
+    fclose(fp);
+    printf("[导出] %d条 → %s\r\n", rows, csvfile);
+    return rows;
+}
+
 void db_close(DBHandle *h)
 {
     sqlite3_finalize(h->stmt_insert);   /* 每个prepare要有且只有一个finalize */
