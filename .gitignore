@@ -7,3 +7,7 @@ i2c_scan3
 *.bak
 *.o
 sensor_framework
+*.o
+sensor_framework
+can_test
+*.bak*
