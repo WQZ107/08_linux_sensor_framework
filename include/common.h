@@ -1,4 +1,5 @@
-/* include/common.h —— 全项目公共定义（本工程"宪法"） */
+/* include/common.h —— 全项目公共定义（本工程"宪法"）
+ * 组5：DataPoint 新增 satellites（卫星数由 CAN 0x107 填入） */
 #ifndef __COMMON_H__
 #define __COMMON_H__
 
@@ -30,7 +31,8 @@ typedef struct {
     float  pitch;            /* 俯仰角°（块L：姿态解算 0x109） */
     float  roll;             /* 横滚角°（块L） */
     float  distance;         /* 距离mm（块M：HC-SR04 0x10A） */
-    int    valid;            /* GPS定位有效？（本工程比教材多加1列：室内也能验全链） */
+    int    valid;            /* GPS定位有效？（组5：由 CAN 卫星数推导） */
+    int    satellites;       /* 卫星数（组5：CAN 0x107 data[0]，原来在 store 线程从 g_gps 取） */
     int    alert;            /* 0=正常 1=告警 */
 } DataPoint;
 

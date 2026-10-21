@@ -1,4 +1,7 @@
-/* src/thread_store.c —— 存储线程 v2.0：SQLite 事务批量（组3：CSV → 数据库） */
+/* src/thread_store.c —— 存储线程 v2.1：SQLite 事务批量（组5：satellites 改读 DataPoint）
+ * 与 v2.0 的唯一差别：卫星数不再从本地 g_gps 取，改用 collector 填好的 dp.satellites；
+ * 数据库层（database.h/.c）一行未动 —— 模块可替换架构。
+ */
 #include "common.h"
 #include "ringbuf.h"
 #include "database.h"
@@ -19,16 +22,13 @@ static void flush_batch(DataPoint *batch, int n)
         return;
     }
 
-    pthread_mutex_lock(&g_gps_lock);      /* 锁内只拷数据：卫星数从 g_gps 拷出 */
-    int sat = g_gps.satellites;
-    pthread_mutex_unlock(&g_gps_lock);
-
+    /* 组5：卫星数来自 DataPoint（collector 从 CAN 0x107 填），不再读本地 g_gps */
     for (int i = 0; i < n; i++) {
         db_insert(&g_db, batch[i].timestamp,
                   batch[i].lat, batch[i].lon, batch[i].speed,
                   batch[i].accel_total, batch[i].temperature,
                   batch[i].humidity, batch[i].pitch, batch[i].roll, batch[i].distance,
-                  sat, batch[i].alert);
+                  batch[i].satellites, batch[i].alert);
         if (batch[i].alert) {             /* 告警行额外记 alert_log（同一事务内） */
             char detail[64];
             snprintf(detail, sizeof(detail), "speed=%.0f accel=%.2f",
