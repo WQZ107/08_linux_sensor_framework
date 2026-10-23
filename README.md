@@ -1,70 +1,74 @@
-# 车载多线程传感器采集框架（I.MX6U-ALPHA / Linux）
+# 车载多线程传感器数据采集框架（I.MX6U-ALPHA / Linux）
 
-基于 pthread 的多线程数据采集框架：五线程 + **两级生产者-消费者流水线**，采集 GPS / MPU6050 数据，
-经组装、告警检测后持久化为 CSV；长跑不掉数据、不涨内存，可被信号干净终止。
+> 毕设《基于嵌入式Linux的车载行车数据记录仪》上位机软件骨架
+> **版本：v1.0（2026-10-23，126-140 CAN 全链路验收完成）**
 
-> 本工程是《基于嵌入式Linux的车载行车数据记录仪》毕设**上位机（I.MX6ULL）的软件骨架**。
+## 系统架构
 
-## 架构
-![架构图](docs/arch.png)
+```
+STM32F103（传感器节点）                    I.MX6ULL ALPHA（汇聚节点）
+GPS/DHT11/MPU6050/HC-SR04 → bxCAN/TJA1050 → SocketCAN can0
+                                               ↓ can_thread（CanData + 互斥锁）
+                                          collector（1Hz 组装 DataPoint）
+                                               ↓ ①号环形 buffer
+                                          process（告警检测）
+                                               ↓ ②号环形 buffer
+                                          store（SQLite 事务批量）
+                                               ↓
+                                          vehicle.db + db_query
+```
 
-- **两条数据源**
-  - GPS 线程：`/dev/ttymxc2` @9600，NMEA 拼行状态机 + 解析（~1Hz）
-  - 传感器线程：`/dev/i2c-1` 0x68（MPU6050），Linux I2C 文件 IO，100ms 周期
-- **共享区**：`g_gps` / `g_accel`，各一把互斥锁；只存"最新值"，锁内只拷数据（锁粒度）
-- **两条流水线缓冲**：①号（采集→处理）、②号（处理→存储），带条件变量（满则睡 / 空则睡）
-- **三个下游线程**：collector（1Hz 组装 DataPoint）、process（告警检测 + 转交）、store（CSV + 每条 fflush）
-- **反压**：下游变慢自动传导到源头（不丢数据、内存不涨）
-- **优雅退出**：SIGINT → `volatile g_running` 归零；消费者用 `rb_pop_timeout` 每 1s 醒来看标志，`pthread_join` 收齐后统一清理
+- **六线程**：gps / sensor / can / collector / process / store
+- **两级生产者-消费者流水线**：反压、1:1 零丢失
+- **优雅退出**：SIGINT → `g_running=0`；消费者 `rb_pop_timeout`；CAN `SO_RCVTIMEO`；`pthread_join` 收齐
+
+## 关键实现
+
+- **SocketCAN**：`socket(PF_CAN,SOCK_RAW,CAN_RAW)` → `ioctl(SIOCGIFINDEX)` → `bind` → `read/write`；`SO_RCVTIMEO` 1s；ENETDOWN 限速重试、恢复自动续收
+- **协议解析**：float 小端 `memcpy`、int16 大端移位；数据帧 0x100~0x10A + 事件帧 0x300/0x301/0x302；加速度 **0.01g ÷100**
+- **SQLite**：WAL + NORMAL；`data_point`（12 列）+ `alert_log`；每 10 条事务批量；预编译插入
+- **开机脚本**：`/etc/rc5.d/S99can`（can0 500k 自动 UP）
+
+## 数据表（data_point）
+
+12 列：`timestamp, latitude, longitude, speed, accel_total, temperature, humidity, pitch, roll, distance, satellites, alert`
+（`alert_log`：`timestamp, alert_type, detail`）
 
 ## 编译
-交叉工具链：gcc-linaro 4.9.4（arm-linux-gnueabihf）
 
-```bash
-make            # 产出可执行文件 sensor_framework
-make clean
-```
+- 工具链：Linaro 4.9.4 `arm-linux-gnueabihf-`（PATH 前置）
+- `make`（`-std=gnu99`；`SQLITE_DIR` 指向交叉编译的 sqlite3）
+- 产物：`sensor_framework`（ARM EABI5）；`db_query` 独立编译（不进 OBJS）
 
 ## 运行
+
 ```bash
-scp sensor_framework root@192.168.1.100:/home/root/
-ssh root@192.168.1.100 "chmod +x /home/root/sensor_framework && /home/root/sensor_framework"
-```
-- **前台退出**：`Ctrl+C`（消费者带超时等待，可干净退出）
-- **后台运行**：`./sensor_framework > /home/root/run.log 2>&1 & disown`
-- **后台停止**：`kill -INT $(pidof sensor_framework)`
+date -s "YYYY-MM-DD HH:MM:SS"        # 先 date 确认；板子 RTC 视后备电池而定
+ip -details link show can0           # S99can 应已自动 UP/500k
+cd /home/root
+stdbuf -oL ./sensor_framework > /home/root/run.log 2>&1 &
+disown
 
-## 数据文件
-`/home/root/data/sensor_data.csv`（追加写；首行表头，带 UTF-8 BOM 便于 Excel 打开）
-
-- 列顺序（共 12 列）：`时间,纬度,经度,速度,加速度,温度,湿度,俯仰,横滚,距离,valid,告警`
-- 稳定 **1 行/秒**；每条 `fflush`（断电不丢已写数据）
-- `valid=1` 表示 GPS 已定位（室内通常为 0）
-
-## 目录结构
-```
-sensor_framework/
-├── include/   common.h  ringbuf.h  gps_nmea.h  serial.h  mpu6050_linux.h
-├── src/       main.c  ringbuf.c  thread_gps.c  thread_sensor.c  collector.c
-│              thread_process.c  thread_store.c  gps_nmea.c  serial.c  mpu6050_linux.c
-├── docs/      arch.png（架构图）
-└── Makefile
+./db_query stats
+./db_query range "start-time" "end-time"
+./db_query alerts
 ```
 
-## 运行观测（日志）
-| 日志 | 含义 | 节奏 |
-|---|---|---|
-| `[DATA] …` | 处理线程抽样打印（lat/lon/spd/accel/temp/humi/P/R/D/valid） | 每 10 条 |
-| `[STORAGE] 已存储 N 条` | 存储进度 | 每 5 条 |
-| `[ALERT] [!] …` | 告警事件（超速 >100km/h / 剧烈运动 >1.8g） | 触发式 |
+## 验收数据（2026-10-23，4h 长跑）
 
-## 验收数据（本阶段实测）
-- **加速度**：静止 ≈1.0 g；猛晃峰值 **3.39 g** 触发 `[ALERT] 剧烈运动`
-- **稳定性**：连续运行 **3 小时 16 分**（11773 秒），VmRSS **436 → 436 kB 零增长**（无泄漏），无崩溃
-- **吞吐 / 零丢失**：11771 条 ÷ 11773 秒 = **1.0000 条/秒**（采集 = 存储 = CSV 行增量）
-- **优雅退出**：`Ctrl+C` / `kill -INT` 后五个线程全部打印退出（存储线程报"成功 11771 条，失败 0 条"），程序干净结束
+- 时长 **4h02m45s**（14,565 s），新行 **14,561**，完整率 **99.97%**，**零丢失**（存储=COUNT）
+- CAN RX **559,950 帧**，errors/dropped/overrun 全 **0**（≈38.4 帧/s）
+- DB **2.1 MB**，≈**151 B/条**；`COUNT(*)` **0.021 s**
+- CPU **0.5%**；VmRSS 1904→4120 kB（**SQLite 页缓存 ~2MB，非泄漏**）
+- 异常注入：STM32 断电 / CANH 断线 / 运行中删库 / 双板重启，均不崩、可恢复（S99can 自动）
 
 ## 已知限制
-- GPS 真定位需**窗边/室外**；系统时间依赖板载时钟（无 RTC 后备电池，断电回镜像构建时间）
-- 温湿度 / 姿态 / 距离目前为**模拟值**（下位机 STM32 真值后续经 CAN 接入）
-- 教学/毕设工程：暂无异常恢复与数据库支持（下一阶段升级 SQLite 存储）
+
+- **室内 GPS 未定位**：0x100/101 停发；开机自检曾残留测试坐标（sat=8），修复后 sat=0；论文不得引用自检坐标
+- **RTC 时间依赖后备电池**：每次开测先 `date` 确认
+- 0x301/0x302 在板倾斜/探头近物时会周期性触发（正常事件，非故障）
+- 4h 历史数据中 `satellites=8` 属自检残留期采集，引用时需注明
+
+## 仓库
+
+https://github.com/WQZ107/08_linux_sensor_framework （私有）
