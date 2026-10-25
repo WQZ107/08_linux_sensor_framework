@@ -14,6 +14,8 @@ pthread_mutex_t g_accel_lock = PTHREAD_MUTEX_INITIALIZER;
 DataRingBuffer g_databuf;        /* 1号buffer：采集 → 处理 */
 DataRingBuffer g_procbuf;        /* 2号buffer：处理 → 存储    ★B方案 */
 volatile int g_running = 1;      /* ⭐所有线程的退出开关 */
+DataPoint g_latest = {0};	 	/* Day163:橱窗本体（定义放 main.c，宪法的规定）*/
+pthread_mutex_t g_latest_lock = PTHREAD_MUTEX_INITIALIZER;
 DBHandle g_db;                   /* 组3：数据库句柄 */
 pthread_mutex_t g_db_lock = PTHREAD_MUTEX_INITIALIZER;  /* 组3：写库互斥锁 */
 
@@ -39,11 +41,12 @@ extern void *sensor_thread(void *);
 extern void *collector_thread(void *);
 extern void *process_thread(void *);
 extern void *store_thread(void *);
+extern void *tcp_thread(void *);		/* Day163：TCP 推送 */
 /* can_thread 的声明在 thread_can.h */
 
 int main(void)
 {
-    pthread_t tid[6];
+    pthread_t tid[7];
     int nthreads = 0;
     int can_ok;
 
@@ -79,6 +82,8 @@ int main(void)
     } else {
         fprintf(stderr, "[CAN] 初始化失败，CAN 线程不启动（其他线程照常运行）\n");
     }
+	 /* Day163：第 7 个线程——TCP 推送（bind 失败时线程内部自己降级退出） */
+	 pthread_create(&tid[nthreads++], NULL, tcp_thread, NULL);
 
     /* 主线程等所有线程退出 */
     for (int i = 0; i < nthreads; i++)

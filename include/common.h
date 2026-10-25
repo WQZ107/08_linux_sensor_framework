@@ -52,6 +52,8 @@ extern pthread_mutex_t g_accel_lock;
 extern DataRingBuffer g_databuf;
 extern DataRingBuffer g_procbuf;
 extern volatile int g_running;   /* ⭐退出开关 */
+extern DataPoint g_latest;		/* Day163:最新成品橱窗（process 盖章后更新，TCP只看不动）*/
+extern pthread_mutex_t g_latest_lock;
 
 /* ─── 工具函数（main.c 实现）─── */
 void get_timestamp(char *buf, int size);

@@ -24,6 +24,10 @@ void *process_thread(void *arg)
             }
 
             rb_push(&g_procbuf, &dp);             /* B方案：处理完转交2号buffer */
+			/* Day163：留一份最新成品给 TCP 线程看（橱窗：只看最新，不消费） */
+			pthread_mutex_lock(&g_latest_lock);
+			g_latest = dp;
+			pthread_mutex_unlock(&g_latest_lock);
 
             if (++print_count % 10 == 0) {        /* 每10条一次,防刷屏 */
                 printf("[DATA] lat=%.6f lon=%.6f spd=%.0f accel=%.2fg temp=%.1f humi=%.1f P=%.1f R=%.1f D=%.0f valid=%d %s\n",
