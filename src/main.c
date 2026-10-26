@@ -14,7 +14,7 @@ pthread_mutex_t g_accel_lock = PTHREAD_MUTEX_INITIALIZER;
 DataRingBuffer g_databuf;        /* 1号buffer：采集 → 处理 */
 DataRingBuffer g_procbuf;        /* 2号buffer：处理 → 存储    ★B方案 */
 volatile int g_running = 1;      /* ⭐所有线程的退出开关 */
-DataPoint g_latest = {0};	 	/* Day163:橱窗本体（定义放 main.c，宪法的规定）*/
+DataPoint g_latest = {{0}};	 	/* Day163:橱窗本体（定义放 main.c，宪法的规定）*/
 pthread_mutex_t g_latest_lock = PTHREAD_MUTEX_INITIALIZER;
 DBHandle g_db;                   /* 组3：数据库句柄 */
 pthread_mutex_t g_db_lock = PTHREAD_MUTEX_INITIALIZER;  /* 组3：写库互斥锁 */
