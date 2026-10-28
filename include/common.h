@@ -36,6 +36,14 @@ typedef struct {
     int    alert;            /* 0=正常 1=告警 */
 } DataPoint;
 
+/* 事件橱窗(修复日:事件实时推送用;thread_can 写,TCP 读) */
+typedef struct {
+	int seq;		/* 事件序号:每来一个事件帧 +1,Qt 靠它判"新事件" */
+	int type;		/* 1=急刹 2=侧翻 3=防撞 */
+	int val;		/* 急刹=acc×100 / 侧翻=R×10 / 防撞=dist mm */
+	int p10;		/* 侧翻专用:P×10(其余为 0) */
+} EventInfo;
+
 /* ─── 线程安全环形 buffer ─── */
 typedef struct {
     DataPoint *buffer;
@@ -54,6 +62,8 @@ extern DataRingBuffer g_procbuf;
 extern volatile int g_running;   /* ⭐退出开关 */
 extern DataPoint g_latest;		/* Day163:最新成品橱窗（process 盖章后更新，TCP只看不动）*/
 extern pthread_mutex_t g_latest_lock;
+extern EventInfo g_ev;		  /* 修复日:事件橱窗 */
+extern pthread_mutex_t g_ev_lock;
 
 /* ─── 工具函数（main.c 实现）─── */
 void get_timestamp(char *buf, int size);

@@ -71,6 +71,13 @@ void *can_thread(void *arg)
             CanData ev;
             memset(&ev, 0, sizeof(ev));
             if (can_parse_frame(&frame, &ev) == 0) {
+			                /* ★修复日:事件进橱窗(实时推送不节流;60s 节流只约束 alert_log 历史记录) */
+                pthread_mutex_lock(&g_ev_lock);
+                g_ev.seq++;
+                if (ev.event_id == 0x300)      { g_ev.type = 1; g_ev.val = ev.event_val; g_ev.p10 = 0; }
+                else if (ev.event_id == 0x301) { g_ev.type = 2; g_ev.val = ev.event_r10;  g_ev.p10 = ev.event_p10; }
+                else                           { g_ev.type = 3; g_ev.val = ev.event_val; g_ev.p10 = 0; }
+                pthread_mutex_unlock(&g_ev_lock);
                 if (ev.event_id == 0x300)
                     printf("[CAN线程] 事件 急刹 acc=%.2fg\n", ev.event_val / 100.0);
                 else if (ev.event_id == 0x301)
